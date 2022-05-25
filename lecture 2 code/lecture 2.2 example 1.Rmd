@@ -1,0 +1,87 @@
+---
+title: "lecture 2.2 example 1"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+# clear environment
+rm(list = ls())
+
+# set random seed
+set.seed(123)
+```
+
+## define params 
+```{r}
+# define true parameters of the data generating process
+pTrue = 0.7
+
+# define data set size
+nData = 100
+
+# prior params
+aPrior = 1
+bPrior = 1
+```
+
+## simulate dataset
+```{r}
+data = rbinom(n = nData, size = 1, prob = pTrue)
+nWater = sum(data)
+```
+
+## build simulation functions
+```{r}
+
+prior <- function(nGridPoints) {
+  pGrid = seq(from = 0, to = 1,length.out = nGridPoints)
+  prior = dbeta(x = pGrid, shape1 = aPrior, shape2 = bPrior)
+}
+
+compute_posterior <- function(nGridPoints) {
+  #build grid
+  pGrid = seq(from = 0, to = 1,length.out = nGridPoints)
+  gridSize = 1 / nGridPoints
+  # compute likelihood
+  likelihood = dbinom(x = nWater, size = nData, prob = pGrid)
+  # compute posterior
+  postGrid = likelihood * prior(nGridPoints)
+  postGrid = postGrid / ( sum(postGrid) * gridSize )
+  #
+  return(postGrid)
+}
+```
+
+## simulations: 20 grid points 
+```{r}
+# note that analytical solution plotted with 100-point grid resolution
+pGrid = seq(from = 0, to = 1,length.out = 20)
+plot(pGrid, compute_posterior(20), type="l", lwd=4,
+     xlab = "pWater", ylab = "posterior",
+     ylim = c(0,10), main = "20 grid points")
+gridAnalytical = seq(from = 0, to = 1,length.out = 100)
+postAnalytical = dbeta(gridAnalytical, aPrior + nWater, bPrior + nData - nWater)
+points(gridAnalytical, postAnalytical, col = 'red')
+points(gridAnalytical, postAnalytical, type = "l",col = 'red')
+abline(v = pTrue, lty=2)
+legend(0,10, legend = c("grid approx", "analitical"),
+       col = c("black","red"), lty=c(1,1) )
+```
+## simulations: 100 grid points
+```{r}
+pGrid = seq(from = 0, to = 1,length.out = 100)
+plot(pGrid, compute_posterior(100), type="l", lwd=4,
+     xlab = "pWater", ylab = "posterior",
+     ylim = c(0,10), main = "100 grid points")
+gridAnalytical = seq(from = 0, to = 1,length.out = 100)
+postAnalytical = dbeta(gridAnalytical, aPrior + nWater, bPrior + nData - nWater)
+points(gridAnalytical, postAnalytical, col = 'red')
+points(gridAnalytical, postAnalytical, type = "l",col = 'red')
+abline(v = pTrue, lty=2)
+legend(0,10, legend = c("grid approx", "analitical"),
+       col = c("black","red"), lty=c(1,1) )
+```
+

@@ -1,0 +1,67 @@
+---
+title: "lecture 5.3 example 1"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+# clear workspace
+rm(list=ls())
+# set random seed
+set.seed(123)
+```
+
+## simulation parameters
+```{r}
+nSamples = 10000
+M =3
+```
+
+## define functions
+```{r}
+pFn = function(x) {
+  if (x>=0 && x<0.25)
+    8 * x
+  else if (x >=0.25 && x<=1)
+    8/3 -8 * x/3
+  else
+    0
+}
+
+gFn = function(x) {
+  if (x>=0 && x<=1)
+    1
+  else
+    0
+}
+```
+
+
+## simulate and plot results
+```{r}
+nDraws = 0
+nIter = 0
+samples = c()
+
+while (nDraws < nSamples) {
+  xC = runif(1,0,1)
+  acceptRatio = pFn(xC) /(M * gFn(xC))
+  u = runif(1,0,1)
+  nIter = nIter + 1
+  if (acceptRatio >= u) {
+    samples = c(samples, xC)
+    nDraws = nDraws + 1
+  }
+}
+
+#print(paste("nIter = ", nIter))
+
+xGrid = seq(0,1,by=0.01)
+yGrid = unlist(lapply(xGrid,pFn))
+plot(xGrid,yGrid,col="red",lwd=2,type="l",
+     xlab = "theta", ylab = "density")
+lines(density(samples), lwd=2, col="blue", lty=2)
+```
+

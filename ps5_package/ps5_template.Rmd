@@ -1,0 +1,335 @@
+---
+title: "Ps5 solutions"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Question 1
+
+## preliminaries
+```{r}
+# clear workspace
+rm(list=ls())
+# set random seed
+set.seed(100)
+library(MASS)
+
+#define sigma value for the covariance matrix
+s = sqrt(0.25)
+sig = matrix(c(s^2, 0, 0, s^2), 2)
+```
+
+## Step 1
+```{r}
+# define functions
+
+TargetDtbn = function(t){
+  t1 = t[1]
+  t2 = t[2]
+  if ((t2 + t1 <= 1) & (t2 > t1)) {
+    prob = 6 * t1
+  } else if ((t2 + t1 <= 1) & (t2 <= t1)) {
+    prob = 6 * t2
+  } else if ((t2 + t1 > 1) & (t2 <= t1)) {
+    prob = 3 - 6 * (t1 - 0.5)
+  } else if ((t2 + t1 > 1) & (t2 > t1)) {
+    prob = 3 - 6 * (t2 - 0.5)
+  }
+  return(prob)
+}
+
+SampleProposalDtbn = function(tt) {
+  tstar = mvrnorm(1, mu=tt, Sigma=sig)
+  return(tstar)
+}
+
+DensityProposalDtbn = function(t, tprime) {
+  mu1 = tprime[1]
+  mu2 = tprime[2]
+  x1 = t[1]
+  x2 = t[2]
+  rho = sig[1,2] / (sqrt(sig[1,1] * sig[2,2]))
+  z = (x1 - mu1)^2 / sig[1,1] + (x2 - mu2)^2 / sig[2,2] - (2 * rho * (x1 - mu1) * (x2 - mu2)) / (sqrt(sig[1,1] * sig[2,2]))
+  prob = 1 / (2 *pi * sqrt(sig[1,1] * sig[2,2]) * sqrt(1 - rho^2)) * exp(-z / (2 * sqrt(1 - rho^2)))
+  return(prob)
+}
+
+MHsampling = function(numSamp, t0) {
+  #check the t0 parameter satisfies the criterion P(t0) > 0
+  if (TargetDtbn(t = t0) <=0 ){
+    print("Choose new theta0 vector")
+  }
+  # make blank matrix for output
+  out = matrix(rep(0, numSamp * 2), nrow=numSamp, ncol=2)
+  # loop over desired number of samples
+  # initialize the first theta reference value
+  tref = t0
+  for (i in 1:numSamp){
+    # sample vector theta* from proposal distribution with mean tref
+    tstar = SampleProposalDtbn(tt = tref)
+    # compute acceptance ratio
+    num = TargetDtbn(t = tstar) / DensityProposalDtbn(t = tstar, tprime = tref)
+    den = TargetDtbn(t = tref) / DensityProposalDtbn(t = tref, tprime = tstar)
+    r = num / den
+    # determine theta_t value
+    testval = runif(1)
+    if (testval < min(c(r, 1))) {
+      tt = tstar
+    } else {
+      tt = tref 
+    }
+    # save tt values in output matrix
+    out[i, 1] = tt[1]
+    out[i,2] = tt[2]
+    # iterate the reference theta forward one
+    tref = tt
+  }
+  return(out)
+}
+
+```
+
+
+## Step 2
+```{r}
+# draw 250,000 samples:
+dat = MHsampling(250000, t0=c(0.5,0.5))
+plot(dat[ ,1], dat[ , 2], pch=16, xlab = "theta_1", 
+     ylab="theta_2", type = "p", col=rgb(red=0, green=0, blue=1, alpha=0.0075), 
+     xlim=c(0, 1), ylim=c(0, 1))
+```
+
+## Step 3
+```{r}
+# data
+t1dat = dat[ , 1]
+t2dat = dat[ , 2]
+
+# analytical posterior functions
+xvals1 = seq(min(t1dat), max(t1dat), (max(t1dat) - min(t1dat)) / 100 )
+xvals2 = seq(min(t2dat), max(t2dat), (max(t2dat) - min(t2dat)) / 100 )
+
+post1 = function(t1) {
+  y = -6 * t1 * (t1 - 1)
+  return(y)
+}
+
+yvals1 = post1(xvals1)
+
+# marginal poteriors
+
+hist(t1dat, 
+     breaks = 100,
+     col="peachpuff",
+     border="black",
+     prob = TRUE, # show densities instead of frequencies
+     xlab = "theta_1")
+points(xvals1, yvals1, type="l",col="blueviolet")
+```
+Analytical posterior: -6 * t1 * (t1 - 1)
+
+## Step 4
+```{r}
+# compute values:
+mu1 = mean(t1dat)
+mu2 = mean(t2dat)
+paste("Mean of theta1: ", mu1)
+paste("Mean of theta2: ", mu2)
+var1 = var(t1dat)
+var2 = var(t2dat)
+paste("Variance of theta1: ", var1)
+paste("Variance of theta2: ", var2)
+covar = cov(t1dat, t2dat)
+rho = covar / (sqrt(var1 * var2))
+paste("Correlation: ", rho)
+```
+
+
+# Question 2
+
+## preliminaries
+```{r}
+# clear workspace
+rm(list=ls())
+# set random seed
+set.seed(111)
+library("MASS")
+library("mvtnorm")
+#install.packages("corrcoverage")
+
+# import data
+data = read.csv("~/Desktop/Wages1.csv")
+ydat = data$wage
+ydat = log(ydat)
+x1dat = data$school
+x1dat = x1dat - mean(x1dat)
+x2dat = data$exper
+x2dat = x2dat - mean(x2dat)
+
+#choose a parameter value for sigma in the proposal dist
+sigmaSqrd = 0.0005
+```
+
+## Step 1
+```{r}
+# define functions
+
+TargetDtbn = function(y, x1, x2, tt) {
+  # translate parameters to model description
+  constant = tt[1]
+  beta_sC = tt[2]
+  beta_eC = tt[3]
+  sigma = tt[4]
+  # compute and return posterior
+  logPost = log(1/sigma ^ 2)
+  predVal = constant + beta_sC * x1 + beta_eC * x2
+  logPost = logPost + sum(log(dnorm(y, predVal, sigma))) 
+  return(logPost)
+}
+
+SampleProposalDtbn = function(tt, sigParam) {
+  #proposal distribution is a 4D multivariate normal 
+  # tt is a vector of 4 known values: b0, b1, b2, sig (the means)
+  # sigParam is a free parameter which we have to optimize for sampling
+  tstar = rmvnorm(1, mean=tt, sigma=diag(rep(sigParam, 4)))
+  isNegative = TRUE
+  while (isNegative == TRUE){
+    if (tstar[4] <= 0){
+      # resample
+      newt = rmvnorm(1, mean=tt, sigma=diag(rep(sigParam, 4)))
+      tstar[4] = newt[4]
+    } else {
+      isNegative = FALSE
+    }
+  }
+  return(tstar)
+}
+
+DensityProposalDtbn = function(t, tprime, sigParam) {
+  prob = dmvnorm(t, mean=tprime, sigma=diag(rep(sigParam, 4)))
+  return(prob)
+}
+
+MHsampling = function(numSamp, y, x1, x2, t0, sigmaParam) {
+  # make blank matrix for output
+  out = matrix(rep(0, numSamp * 4), nrow=numSamp, ncol=4)
+  print(out[1, ])
+  # loop over desired number of samples
+  # initialize the first theta reference value
+  tref = t0
+  for (i in 1:numSamp){
+    # sample vector theta* from proposal distribution with mean tref
+    tstar = SampleProposalDtbn(tt = tref, sigParam=sigmaParam)
+    # compute acceptance ratio
+    a = TargetDtbn(y=y, x1=x1, x2=x2, tt=tstar)
+    b = log(DensityProposalDtbn(t=tstar, tprime=tref, sigParam=sigmaParam))
+    num = a - b
+    c = TargetDtbn(y=y, x1=x1, x2=x2, tt=tref)
+    d = log(DensityProposalDtbn(t=tref, tprime=tstar, sigParam=sigmaParam))
+    den = c - d
+    r = num - den
+    # determine theta_t value
+    testval = runif(1)
+    if (log(testval) <= r) {
+      tt = tstar
+    } else {
+      tt = tref 
+    }
+    # save tt values in output matrix
+    out[i, 1] = tt[1]
+    out[i,2] = tt[2]
+    out[i, 3] = tt[3]
+    out[i,4] = tt[4]
+    # iterate the reference theta forward one
+    tref = tt
+  }
+  return(out)
+}
+```
+
+## Step 2
+```{r}
+# compute 510,000 values
+Dat = MHsampling(510000, y=ydat, x1=x1dat, x2=x2dat, t0=c(1.5, 0.1, 0.04, 0.6), sigmaParam=sigmaSqrd)
+# throw out burn-in data
+dat = Dat[10001:510000, ]
+
+#c ompute OLS
+x1mc = (x1dat- mean(x1dat))
+x2mc = (x2dat - mean(x2dat))
+model = lm(ydat ~ x1mc + x2mc)
+summary(model)
+b0OLS = summary(model)$coefficients[1]
+b1OLS = summary(model)$coefficients[2]
+b2OLS = summary(model)$coefficients[3]
+sigmaOLS = summary(model)$sigma
+
+mu1 = mean(dat[ , 1])
+mu2 = mean(dat[ , 2])
+mu3 = mean(dat[ , 3])
+mu4 = mean(dat[ , 4])
+
+# plot histograms
+hist(dat[ , 1], 
+     breaks = 100,
+     col="peachpuff",
+     border="black",
+     prob = TRUE, # show densities instead of frequencies
+     xlab = "b0",
+     main="Beta0 Histogram")
+abline(v=mu1, lwd=3, col="red")
+abline(v=b0OLS, lwd=3, col="blue")
+
+hist(dat[ , 2], 
+     breaks = 100,
+     col="peachpuff",
+     border="black",
+     prob = TRUE, # show densities instead of frequencies
+     xlab = "b1",
+     main="Beta1 Histogram")
+abline(v=mu2, lwd=3, col="red")
+abline(v=b1OLS, lwd=3, col="blue")
+
+hist(dat[ , 3], 
+     breaks = 100,
+     col="peachpuff",
+     border="black",
+     prob = TRUE, # show densities instead of frequencies
+     xlab = "b2",
+     main="Beta2 Histogram")
+abline(v=mu3, lwd=3, col="red")
+abline(v=b2OLS, lwd=3, col="blue")
+
+hist(dat[ , 4], 
+     breaks = 100,
+     col="peachpuff",
+     border="black",
+     prob = TRUE, # show densities instead of frequencies
+     xlab = "sig",
+     main="Sigma Histogram")
+abline(v=mu4, lwd=3, col="red")
+abline(v=sigmaOLS, lwd=3, col="blue")
+```
+Note that I plotted the red and blue lines, but the red ones got covered up. 
+
+## Step 3
+```{r}
+# compute standard deviations
+sd0 = sd(dat[ ,1])
+paste("Standard deviation of beta0: ", sd0)
+sd1 = sd(dat[ ,2])
+paste("Standard deviation of beta1: ", sd1)
+sd2 = sd(dat[ ,3])
+paste("Standard deviation of beta2: ", sd2)
+sdsig = sd(dat[ ,4])
+paste("Standard deviation of sigma: ", sdsig)
+
+# compute correlation
+covar = cov(dat[ ,2], dat[ ,3])
+rho = covar / (sd1 * sd2)
+paste("Correlation rho: ", rho)
+```
+
+
+

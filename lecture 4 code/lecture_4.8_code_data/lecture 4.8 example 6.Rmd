@@ -1,0 +1,84 @@
+---
+title: "lecture 4.8 example 6"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+#clear workspace
+rm(list=ls())
+#initalize random seed
+set.seed(123)
+```
+
+## set simulation parameters
+```{r}
+beta0 = 0
+beta1 = 1
+beta2 = 0.5
+sigma = 1
+nObs = 250
+
+alpha = seq(0, 0.9, by = 0.05)
+nSims = 1000
+```
+
+## carry out simulations
+```{r}
+betaX1 = array(rep(0,length(alpha) * nSims),
+              dim = c(length(alpha), nSims))
+betaX2 = array(rep(0,length(alpha) * nSims),
+              dim = c(length(alpha), nSims))
+
+for (t in 1:length(alpha)) {
+  for (s in 1:nSims) {
+    z = runif(nObs,-1,1)
+    x1 = alpha[t] * z + (1-alpha[t]) * runif(nObs,-1,1)
+    x2 = alpha[t] * z + (1-alpha[t]) * runif(nObs,-1,1)
+    y = beta0 + beta1 * x1 + beta2 * x2 + rnorm(nObs,mean=0, sd=sigma)
+    m = lm(y ~ x1 + x2 )
+    betaX1[t,s] = coef(m)[2]
+    betaX2[t,s] = coef(m)[3]
+  }
+}
+```
+
+## visualize results
+```{r}
+betaX1_Mean = apply(betaX1,c(1),mean)
+betaX1_10 = rep(0, length(alpha))
+for (t in 1:length(alpha)) {
+  betaX1_10[t] = quantile(betaX1[t,],probs=0.1)
+}
+betaX1_90 = rep(0, length(alpha))
+for (t in 1:length(alpha)) {
+  betaX1_90[t] = quantile(betaX1[t,],probs=0.9)
+}
+
+betaX2_Mean = apply(betaX2,c(1),mean)
+betaX2_10 = rep(0, length(alpha))
+for (t in 1:length(alpha)) {
+  betaX2_10[t] = quantile(betaX2[t,],probs=0.1)
+}
+betaX2_90 = rep(0, length(alpha))
+for (t in 1:length(alpha)) {
+  betaX2_90[t] = quantile(betaX2[t,],probs=0.9)
+}
+
+plot(alpha, betaX1_10, type="l", lty=2,
+     ylim=c(-1,2), xlab = "alpha",
+     ylab = "beta_1")
+points(alpha, betaX1_90, type="l", lty=2)
+points(alpha, betaX1_Mean, type="l", lwd =2)
+```
+
+```{r}
+plot(alpha, betaX2_10, type="l", lty=2,
+     ylim=c(-1,2), xlab = "alpha",
+     ylab = "beta_2")
+points(alpha, betaX2_90, type="l", lty=2)
+points(alpha, betaX2_Mean, type="l", lwd =2)
+```
+

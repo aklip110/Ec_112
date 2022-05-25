@@ -1,0 +1,87 @@
+---
+title: "lecture 3.1 example 1"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+#clear work space
+rm(list=ls())
+#set random seed
+set.seed(123)
+```
+
+## simulation parameters
+```{r}
+# define grid size
+nGridPoints = 50
+pGrid = seq(from = 0, to = 1,length.out = nGridPoints)
+gridSize = 1 / nGridPoints
+
+# define model priors
+aPrior = 5
+bPrior = 5
+
+# data
+nHeads = 60
+nData = 100
+```
+
+## define functions
+```{r}
+# compute data likelihood
+computeLike = function(nHeads, nData, pErr) {
+  likeGrid = rep(-1, nGridPoints)
+  for (i in 1:nGridPoints) {
+    p = pGrid[i]
+    fHeads = ((1 - pErr) * p + pErr * (1 - p)) ^ nHeads
+    fTails = ((1 - pErr) * (1 - p) + pErr * p) ^ (nData - nHeads)
+    likeGrid[i] = fHeads * fTails
+  }
+  return(likeGrid)
+}
+
+# compute posterior
+computePost = function(nHeads, nData, prior, pErr) {
+  likelihood = computeLike(nHeads, nData, pErr)
+  post = likelihood * prior
+  post = post / ( sum(post) * gridSize )
+  return(post)
+}
+```
+
+## compute posteriors for pError = 25%
+
+
+```{r}
+prior = dbeta(x = pGrid, shape1 = aPrior, shape2 = bPrior)
+
+pErr = 0.25
+# compute posterior with measurement error modelled
+postError = computePost(nHeads, nData, prior, pErr)
+# compute posterior with measurement error ignorned
+postNoError = computePost(nHeads, nData, prior, 0)
+
+# plot posteriors
+plot(pGrid, prior, type="l", lwd = 3, col = "black", lty = 2,
+     xlab = "theta", ylab = "posterior", ylim = c(0,10),
+     main = paste("pError = ", pErr))
+points(pGrid, postError, lwd = 2, type = "l", col = 'black')
+points(pGrid, postNoError, lwd = 2, type = "l", col = 'red')
+legend(0,10, legend = c("without error", "with error", "prior"), lty = c(1,1,2),
+           col = c("red","black","black"))
+```
+
+```{r}
+# plot likelihoods
+plot(pGrid, computeLike(nHeads, nData, 0), col = "red", lty=1,
+     lwd = 2, type = "l", xlab = "theta", ylab = "likelihood",
+     main = paste("pError = ", pErr))
+points(pGrid, computeLike(nHeads, nData, pErr), col = "black", lty=1,
+     lwd = 2, type = "l")
+legend(0,10, legend = c("without error", "with error"), lty = c(1,1),
+           col = c("red","black"))
+```
+

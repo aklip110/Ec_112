@@ -1,0 +1,184 @@
+---
+title: "lecture 7.6 example 2
+"
+output: html_document
+---
+
+NOTE: This code builds on an example in Lambert's 2018 book, pp. 395-397, but applies it to Liner Regression model comparison
+
+## prelims
+```{r}
+rm(list=ls())
+set.seed(123)
+
+setwd("~/Desktop")
+
+library(rstan)
+library(caret)
+options(mc.cores = parallel::detectCores())
+```
+
+## simulation params
+```{r}
+nObs = 100
+numFolds = 5
+modelTrue = 2  # number of true predictors: 1 or 2
+
+beta0True = 0
+beta1True = 10
+beta2True = 10
+sigmaTrue = 1
+```
+
+## useful functions
+```{r}
+library(loo)
+
+kFold  = function(aModel, testIndeces, X, Y) {
+  nFolds = length(testIndeces)
+  
+  pointLogLikeTotal = vector()
+  
+  for (i in 1:nFolds) {
+    print(paste("fold #", i))
+    YTest = Y[testIndeces[[i]]]
+    YTrain = Y[-testIndeces[[i]]]
+    XTest = X[testIndeces[[i]],1:2]
+    XTrain = X[-testIndeces[[i]],1:2]
+    fit = sampling(aModel, iter = 1000, chains = 4, refresh=0,
+                   data = list(NTest = dim(XTest)[1], 
+                               NTrain = dim(XTrain)[1], 
+                               XTrain = XTrain, XTest = XTest, 
+                               YTrain = YTrain, YTest = YTest))
+    logLike = extract_log_lik(fit, 'logLike')
+    pointLogLikeTemp = colMeans(logLike)
+    pointLogLikeTotal = c(pointLogLikeTotal, pointLogLikeTemp)
+  }
+  
+  return(pointLogLikeTotal)
+}
+
+computeWAIC  = function(aModel, X, Y) {
+  fit = sampling(aModel, iter = 1000, chains = 4, refresh=0,
+                 data = list(N = dim(X)[1], X = X, Y = Y))
+  logLike = extract_log_lik(fit, 'logLike')
+  WAIC = waic(logLike)
+  return(WAIC)
+}
+
+```
+
+## compile and save stan models
+```{r}
+modelOnePredCV = stan_model("example_2_onePred_cv.stan")
+modelTwoPredCV = stan_model("example_2_twoPred_cv.stan")
+modelOnePredWAIC = stan_model("example_2_onePred_waic.stan")
+modelTwoPredWAIC = stan_model("example_2_twoPred_waic.stan")
+```
+
+
+## simulate data
+```{r}
+x1 = runif(nObs, -2, 2)
+x2 = runif(nObs, -2, 2)
+X = cbind(x1,x2)
+
+if (modelTrue == 1) {
+  mu = beta0True + beta1True * x1
+} else if (modelTrue == 2) {
+  mu = beta0True + beta1True * x1 + beta2True * x2
+}
+
+Y = rnorm(nObs, mu, sigmaTrue)
+
+```
+
+## estimate WAIC
+```{r}
+onePredWAIC  = computeWAIC(modelOnePredWAIC,X,Y)
+print(onePredWAIC)
+```
+
+```{r}
+twoPredWAIC = computeWAIC(modelTwoPredWAIC,X,Y)
+print(twoPredWAIC)
+```
+
+
+## estimate Deviance using cross validation
+```{r}
+## create folds using caret package
+testIndeces = createFolds(1:nObs, k = numFolds, list = TRUE, returnTrain = FALSE)
+
+## compute ELLPD using cross validation
+ellpdOnePred  = sum(kFold(modelOnePredCV, testIndeces, X, Y))
+ellpdTwoPred= sum(kFold(modelTwoPredCV, testIndeces, X, Y))
+
+# output
+print(paste("Deviance-CV for One Pred = ", -2 * round(ellpdOnePred,2)))
+print(paste("Devaince-CV for Two Pred = ", -2 * round(ellpdTwoPred,2)))
+
+```
+
+## recovery simulation plots
+```{r}
+## params
+nObsGrid = c(10,20,40,80,160)
+nSims = 20
+modelTrue = 2
+
+devOnePred = matrix(rep(NA,length(nObsGrid) * nSims), nrow = nSims)
+devTwoPred = matrix(rep(NA,length(nObsGrid) * nSims), nrow = nSims)
+modelUsed = matrix(rep(NA,length(nObsGrid) * nSims), nrow = nSims)
+
+for (n in 1:length(nObsGrid)) {
+  nObs = nObsGrid[n]
+  print(paste("nObs = ", nObs))
+  for (i in 1:nSims) {
+    print(paste("    iteration = ",i))
+    # choose random model
+    modelTrue = sample(c(1,2),1)
+    modelUsed[i,n] = modelTrue
+    # choose random params
+    beta0True = runif(1,-1,1)
+    beta1True = runif(1,-1,1)
+    beta2True = runif(1,-1,1)
+    sigmaTrue = runif(1,0,5)
+    # simulate data
+    x1 = runif(nObs, -2, 2)
+    x2 = runif(nObs, -2, 2)
+    X = cbind(x1,x2)
+    if (modelTrue == 1) {
+      mu = beta0True + beta1True * x1
+    } else if (modelTrue == 2) {
+      mu = beta0True + beta1True * x1 + beta2True * x2
+    }
+    Y = rnorm(nObs, mu, sigmaTrue)
+    # compute Deviances
+    testIndeces = createFolds(1:nObs, k = numFolds,
+                              list = TRUE, returnTrain = FALSE)
+
+    devOnePred[i,n] = -2 * sum(kFold(modelOnePredCV, testIndeces, X,Y))
+    devTwoPred[i,n] = -2 * sum(kFold(modelTwoPredCV, testIndeces, X,Y))
+  }
+}
+
+```
+
+```{r}
+netDev = devOnePred - devTwoPred
+plot(1, type = "n",
+     xlab = "nObs", ylab = "Deviance OnePred - DevianceTwoPred",
+     xlim = c(min(nObsGrid),max(nObsGrid)),
+     ylim = c(min(netDev)-10,max(netDev)+10),
+     at = nObsGrid)
+abline(h=0, lty=2)
+for (i in 1:length(nObsGrid)) {
+  for (m in 1:2) {
+    yP = netDev[modelUsed[,i]==m,i]
+    xP = rep(nObsGrid[i],length(yP)) + runif(length(yP),-2,2)
+    points(xP,yP, col = m)
+  }
+}
+```
+

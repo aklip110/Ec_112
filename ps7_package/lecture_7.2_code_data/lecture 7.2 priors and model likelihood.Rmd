@@ -1,0 +1,69 @@
+---
+title: "lecture 7.2 priros and model likelihood"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+# clear workspace
+rm(list=ls())
+# set random seed
+set.seed(587)
+```
+
+## simulation parameters
+```{r}
+muTrue = 4
+sigma = 1
+nObs = 5
+aGrid = seq(2,10,0.1)
+
+gridSize = 0.01
+muGrid = seq(0,10,gridSize)
+```
+
+## functions
+```{r}
+computePost = function(a, yBar) {
+  # using grid method (faster)
+  # NOTE: yBar a sufficient statistic for the data
+  post = dnorm(yBar, muGrid, sigma/sqrt(nObs))
+  post[muGrid>a] = 0
+  post = post / (sum(post) * gridSize)
+  return(post)
+}
+
+computeMarLike = function(a, yBar) {
+  # approximate integral using grid method
+  mLike = sum(dnorm(yBar, muGrid, sigma) * gridSize/a)
+  return(mLike)
+}
+```
+
+
+## visualize model marginal likelihood a a function of priors
+```{r}
+# simulate data
+y = rnorm(nObs, mean = muTrue, sd = 2)
+
+# compute mode marginal likelihood
+mMarLike = rep(NA,length(aGrid))
+for (i in 1:length(aGrid)) {
+  mMarLike[i] = computeMarLike(aGrid[i],mean(y))
+}
+
+plot(aGrid,mMarLike, type = "l", xlab = "a", ylab = "p(y|m)", lwd=2)
+```
+
+## visualize mu posteriors as a function of priors
+```{r}
+plot(muGrid,computePost(1,mean(y)), type = "l", xlab = "mu",
+      ylab = "p(mu|y)")
+for (a in 2:10) {
+   points(muGrid,computePost(a,mean(y)), type = "l")
+}
+```
+
+

@@ -1,0 +1,104 @@
+---
+title: "lecture 3.2. example 3"
+output: pdf_document
+---
+
+## preliminaries
+```{r}
+#clear work space
+rm(list=ls())
+#set random seed
+set.seed(123)
+```
+
+## simulation params & structures
+```{r}
+# simulation parameters
+nSims = 25000
+nObs = 100
+
+# define priors for mu
+muMean = 50 
+muSd = 50
+
+# build grid
+nGridPoints = 100
+muGridMin = 0
+muGridMax = 100
+muGrid = seq(muGridMin, muGridMax,length.out = nGridPoints)
+muGridSize = (muGridMax - muGridMin) / nGridPoints
+```
+
+## define key functions
+```{r}
+# compute posterior
+computePost = function(data, sigTrue, prior){
+  #initialize posterior matrix
+  post = rep(-1, nGridPoints )
+  #fill out the posterior
+  for (t in 1:nGridPoints) {
+    muVal = muGrid[t]
+    #compute data likelihood
+    loglike = sum(log(dnorm(data, muVal, sigTrue)))
+    # update posterior matrix cell
+    post[t] =  exp(loglike) * prior[t]
+  }
+  # normalize the posterior & return
+  post = post / ( sum(post) * muGridSize)
+  return(post)
+}
+```
+
+## simulations
+```{r}
+#build priors for mu
+muPrior = dnorm(muGrid,muMean,muSd)
+muPrior = muPrior / ( sum(muPrior) * muGridSize )
+
+# initialize arrays to store simulation results
+muTrue = rep(-1,nSims)
+sigTrue = rep(-1,nSims)
+postMean = rep(-1,nSims)
+postSd = rep(-1,nSims)
+nObs = rep(-1,nSims)
+
+# main simulation loop
+for (t in 1:nSims){
+  # sim progress
+  #if (t%%1000==0) {print(t)}
+  # choose sim parameters
+  muTrue[t] = runif(1, 25, 75)
+  sigTrue[t] = runif(1, 10,40)
+  nObs[t] = runif(1,10, 40)
+  # simulate dataset
+  data = rnorm(nObs[t], muTrue[t], sigTrue[t])
+  data = data[is.na(data)==FALSE]
+  # compute posterior
+  post = computePost(data, sigTrue[t], muPrior)
+  # compute posterior summary statistics
+  postMean[t] = sum(muGrid * post * muGridSize,na.rm=TRUE)
+  postSd[t]  = sqrt(sum(post * muGridSize * (muGrid - postMean[t])^2, na.rm=TRUE))
+}
+
+# plot simulation results
+plot(jitter(nObs,1), postMean - muTrue, 
+     col=rgb(red=0.0, green=0.0, blue=1.0, alpha=0.05), 
+     pch = 16,
+     xlab = "sample size", ylab = "mean P(mu|data) - muTrue")
+abline(h=0)
+```
+```{r}
+plot(jitter(nObs,1), postSd, 
+     col=rgb(red=0.0, green=0.0, blue=1.0, alpha=0.05), 
+     pch = 16,
+     xlab = "sample size", ylab = "SD P(mu|data)")
+abline(h=0)
+```
+```{r}
+plot(postMean - muTrue, postSd,
+     col=rgb(red=0.0, green=0.0, blue=1.0, alpha=0.025), 
+     pch = 16,
+     xlab = "mean P(mu|data) - muTrue", ylab = "SD P(mu|data)")
+abline(v=0)
+```
+

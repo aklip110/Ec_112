@@ -1,0 +1,197 @@
+---
+title: "ps7 solutions"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Question 2
+
+## prelims
+```{r}
+rm(list = ls())
+#LOAD DATA
+data = read.csv("~/Desktop/MetabolicRate.csv")
+dataBody = data$BodySize
+dataInstar = data$Instar
+dataMrate = data$Mrate
+
+nObs = length(dataBody)
+print(nObs)
+
+#LOG DATA
+dataBody = log(dataBody)
+dataMrate = log(dataMrate)
+
+setwd("~/Desktop")
+
+library(rstan)
+#library(ggplot2)
+options(mc.cores = parallel::detectCores())
+```
+
+## Step 2
+```{r}
+#RUN THE MODEL WITH 4 CHAINS
+fit = stan('PS_7.stan', iter = 25000, chains = 4,
+           data = list(y=dataMrate, x1=dataBody, x2=dataInstar, N = nObs))
+
+print(fit,probs = c(0.25,0.5,0.75))
+```
+the esitmated values match those from problem set 4. 
+
+## step 3
+```{r}
+#TRACEPLOT
+traceplot(fit, window=c(23000, 25000))
+```
+The traceplots show good mixing among the four chains and they are oscillating 
+about the stationary distribution. Therefore, there aren't any errors in the 
+stan file. 
+
+## step 4
+```{r}
+#MATRIX SCATTERPLOTS
+pairs(fit, pars = c("beta0", "beta1", "beta2", "sigma"))
+```
+
+## step 6
+```{r}
+fit = stan('ps_7_2.stan', iter = 10000, chains = 4,
+           data = list(y=dataMrate, x1=dataBody, x2=dataInstar, N = nObs))
+
+#print(fit,probs = c(0.25,0.5,0.75))
+
+library(bayesplot)
+ypreds = extract(fit)[["yPred"]]
+len = dim(ypreds)[1]
+print(len)
+matrix = ypreds[floor(runif(100) * len), ]
+#print(matrix)
+
+ppc_dens_overlay(
+  dataMrate,
+  matrix,
+  size = 0.25,
+  alpha = 0.7,
+  trim = FALSE,
+  bw = "nrd0",
+  adjust = 1,
+  kernel = "gaussian",
+  n_dens = 1024
+)
+```
+By looking at the plot, we see that the predicted distributions (yrep) don't line 
+up with the data (y) very well on the interval [-0.5, 3.5]. Therefore, we conclude that the linear model is a decent model (because the curves have similar shapes), but doesn't provide a very accurate or satisfactory prediction (because the curves don't overlap well on the interval). The true model is probably more complicated than this linear one.
+
+## step 7
+```{r}
+library(ggplot2)
+print(max(dataInstar))
+
+# need to separate out the y=dataMrate and the columns of the matrix
+I1 = c()
+I2 = c()
+I3 = c()
+I4 = c()
+I5 = c()
+
+#append value n \in [1, 305] to corresponding Ij vector
+for (n in 1:nObs) {
+  if (dataInstar[n] == 1) {
+    I1 = append(I1, n)
+  } else if (dataInstar[n] == 2) {
+    I2 = append(I2, n)
+  } else if (dataInstar[n] == 3) {
+    I3 = append(I3, n)
+  } else if (dataInstar[n] == 4) {
+    I4 = append(I4, n)
+  } else if (dataInstar[n] == 5) {
+    I5 = append(I5, n)
+  }
+}
+
+#make sub-matrices for each j=1:5
+matrix1 = matrix[ , I1]
+matrix2 = matrix[ , I2]
+matrix3 = matrix[ , I3]
+matrix4 = matrix[ , I4]
+matrix5 = matrix[ , I5]
+
+#make sub y-vectors for each j=1:5
+y1 = dataMrate[I1]
+y2 = dataMrate[I2]
+y3 = dataMrate[I3]
+y4 = dataMrate[I4]
+y5 = dataMrate[I5]
+
+#make one overlay plot for each j=1:5
+p1 = ppc_dens_overlay(
+  y1,
+  matrix1,
+  size = 0.25,
+  alpha = 0.7,
+  trim = FALSE,
+  bw = "nrd0",
+  adjust = 1,
+  kernel = "gaussian",
+  n_dens = 1024
+)
+p1 + ggtitle("Instar = 1")
+
+p2 = ppc_dens_overlay(
+  y2,
+  matrix2,
+  size = 0.25,
+  alpha = 0.7,
+  trim = FALSE,
+  bw = "nrd0",
+  adjust = 1,
+  kernel = "gaussian",
+  n_dens = 1024
+)
+p2 + ggtitle("Instar = 2")
+
+p3 = ppc_dens_overlay(
+  y3,
+  matrix3,
+  size = 0.25,
+  alpha = 0.7,
+  trim = FALSE,
+  bw = "nrd0",
+  adjust = 1,
+  kernel = "gaussian",
+  n_dens = 1024
+)
+p3 + ggtitle("Instar = 3")
+
+p4 = ppc_dens_overlay(
+  y4,
+  matrix4,
+  size = 0.25,
+  alpha = 0.7,
+  trim = FALSE,
+  bw = "nrd0",
+  adjust = 1,
+  kernel = "gaussian",
+  n_dens = 1024
+)
+p4 + ggtitle("Instar = 4")
+
+p5 = ppc_dens_overlay(
+  y5,
+  matrix5,
+  size = 0.25,
+  alpha = 0.7,
+  trim = FALSE,
+  bw = "nrd0",
+  adjust = 1,
+  kernel = "gaussian",
+  n_dens = 1024
+)
+
+p5 + ggtitle("Instar = 5")
+```
+
+The model seems to predict data best for Instar = 3. The predictions are decent for Instar=1, 2, and 4, and fairly bad for Instar=5.  This may be because there isn't much data for Instar=5 compared with the other values. The other inconsistencies may be due to the limitatins of the linear model. 
+Also, perhaps the relationship between body size and metabolic rate changes with Instar value and thus we would need a different model for each one. 

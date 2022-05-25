@@ -1,0 +1,56 @@
+---
+title: "gaussian_measurement_model_stan"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## prelims
+```{r}
+rm(list=ls())
+set.seed(123)
+
+setwd("~/Desktop")
+
+library(rstan)
+#library(ggplot2)
+options(mc.cores = parallel::detectCores())
+```
+
+## set simulation params
+```{r}
+nObs = 100
+muTrue = 3
+sigmaTrue = 0.2
+```
+
+## simulate data
+```{r}
+y = rnorm(nObs, muTrue, sigmaTrue)
+```
+
+## fit model in Stan
+```{r}
+
+fit = stan('gaussian_measurement_model.stan', iter = 1000, chains = 4,
+           data = list(y=y, N = nObs))
+```
+
+## print fits and diagnostics
+
+```{r}
+print(fit,probs = c(0.25,0.5,0.75))
+```
+
+```{r}
+traceplot(fit, inc_warmup = FALSE, nrow = 2)
+```
+
+
+
+## visualize posteriors
+```{r}
+pairs(fit, pars = c("mu", "sigma", "lp__"))
+```
+
+

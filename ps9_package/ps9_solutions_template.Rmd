@@ -1,0 +1,336 @@
+---
+title: "ps9 solutions template"
+output:
+  pdf_document: default
+  html_document: default
+---
+]
+# Question 1
+
+## prelims
+```{r}
+# import data
+rm(list=ls())
+set.seed(123)
+
+library(rstan)
+library(caret)
+library(loo)
+options(mc.cores = parallel::detectCores())
+
+data = read.csv("~/Desktop/Wages1.csv")
+ydat = data$wage
+ydat = log(ydat)
+x1dat = data$school
+x1dat = x1dat #- mean(x1dat)
+x2dat = data$exper
+x2dat = x2dat #- mean(x2dat)
+x3dat = data$sex
+x3new = rep(0, length(x3dat))
+for (i in 1:length(x3dat)){
+  if (x3dat[i] == "female"){
+    x3new[i] = 1
+  }
+}
+x3dat = x3new
+```
+
+
+## step 1: Compare models using WAIC
+```{r}
+computeWAIC  = function(aModel, ydat, x1dat, x2dat, x3dat) {
+  fit = sampling(aModel, iter = 1000, chains = 4, data = list(N = length(ydat), y = ydat, x1=x1dat, x2=x2dat, x3=x3dat), refresh=0)
+  logLike = extract_log_lik(fit, 'logLike')
+  WAIC = waic(logLike)
+  return(WAIC)
+}
+
+modelLinearWAIC = stan_model("~/Desktop/linear.stan")
+modelInteractionWAIC = stan_model("~/Desktop/interaction.stan")
+
+normalWAIC  = computeWAIC(modelLinearWAIC, ydat, x1dat, x2dat, x3dat)
+print(normalWAIC)
+
+interactionWAIC  = computeWAIC(modelInteractionWAIC, ydat, x1dat, x2dat, x3dat)
+print(interactionWAIC)
+```
+
+## step 2: Compare models using CV estimates of the deviance
+
+```{r}
+kFold  = function(aModel, testIndeces, y, x1, x2, x3) {
+  nFolds = length(testIndeces)
+  
+  pointLogLikeTotal = vector()
+  
+  for (i in 1:nFolds) {
+    print(paste("iteration #", i))
+    yTest = y[testIndeces[[i]]]
+    yTrain = y[-testIndeces[[i]]]
+    x1Test = x1[testIndeces[[i]]]
+    x1Train = x1[-testIndeces[[i]]]
+    x2Test = x2[testIndeces[[i]]]
+    x2Train = x2[-testIndeces[[i]]]
+    x3Test = x3[testIndeces[[i]]]
+    x3Train = x3[-testIndeces[[i]]]
+    fit = sampling(aModel, iter = 1000, chains = 4,
+                   data = list(NTest = length(yTest), NTrain = length(yTrain), 
+                               yTrain = yTrain, yTest = yTest, x1Train = x1Train, 
+                               x1Test = x1Test, x2Train = x2Train, x2Test = x2Test,
+                               x3Train = x3Train, x3Test = x3Test), refresh=0)
+    logLike = extract_log_lik(fit, 'logLike')
+    pointLogLikeTemp = colMeans(logLike)
+    pointLogLikeTotal = c(pointLogLikeTotal, pointLogLikeTemp)
+  }
+  
+  return(pointLogLikeTotal)
+}
+
+modelLinearCV = stan_model("~/Desktop/linear_cv.stan")
+modelInteractionCV = stan_model("~/Desktop/interaction_cv.stan")
+
+## create folds using caret package
+testIndeces = createFolds(ydat, k = 9, list = TRUE, returnTrain = FALSE)
+
+## compute ELLPD using cross validation
+ellpdLinear  = sum(kFold(modelLinearCV, testIndeces, ydat, x1dat, x2dat, x3dat))
+ellpdInteraction = sum(kFold(modelInteractionCV, testIndeces, ydat, x1dat, x2dat, x3dat))
+
+# output
+print(paste("Deviance-CV for Linear Model    = ", -2 * round(ellpdLinear,2)))
+print(paste("Devaince-CV for Interaction Model = ", -2 * round(ellpdInteraction,2)))
+```
+
+
+## step 3
+
+WAIC results:
+Linear Model: 5887.8
+Interaction Model: 5755.4
+According to the WAIC estimate, the Interaction Model is superior to the Linear Model 
+because the WAIC estimate of the deviance is lower in the case of the Interaction Model.
+
+CV results:
+Linear Model: 5895.6
+Interaction Model:  5765.6
+Likewise, according to the CV estimate, the Interaction Model is superior to the 
+Linear Model because the CV estimate of the deviance is lower in the case of the 
+Interaction Model.
+
+Thus, both methods of estimating the deviance agree and provide consistent answers. 
+We conclude that the Interaction Model has a better predictive accuracy out of sample. 
+
+
+# Question 2
+
+## prelims
+```{r}
+rm(list=ls())
+set.seed(123)
+```
+
+## step 1
+```{r}
+numStep1 = c()
+numStep2 = c()
+###repeat 1000 times:
+for (j in 1:1000){
+  nObs = 100
+  nPreds = 50
+  #generate 100 * 51 random values from N(0,1)
+  dat50 = rnorm(nObs * (1 + nPreds))
+  #create a matrix of the values
+  dataset50 = matrix(data = dat50, nrow = nObs, ncol = nPreds + 1)
+  dframe50 = as.data.frame(dataset50)
+  strs50 = c("y50")
+  for (k in 1:nPreds){
+    strs50 = c(strs50, paste("x", toString(k), sep=""))
+  }
+  colnames(dframe50) = c(strs50)
+  #linear model
+  model50 = lm(y50 ~ ., data=dframe50)
+  vals50 = summary(model50)$coefficients
+  sig_vals50 = vals50[ ,4]
+  #count number of predictors with val < 0.05
+  counter1 = 0
+  for (i in 1:length(sig_vals50)){
+    if (sig_vals50[i] <= 0.05){
+      counter1 = counter1 + 1
+    }
+  }
+  #now we check for the significant predictors (those with a val < 0.25)
+  keep50 = c(1)
+  for (i in 1:length(sig_vals50)){
+    if (sig_vals50[i] <= 0.25){
+      keep50 = append(keep50, i)
+    }
+  }
+  new_matrix50 = dataset50[ , keep50]
+  new_dframe50 = as.data.frame(new_matrix50)
+  new_names50 = c("ynew50")
+  for (k in 1:(length(keep50)-1)){
+    new_names50 = c(new_names50, paste("x", toString(k), sep=""))
+  }
+  colnames(new_dframe50) = c(new_names50)
+  
+  #new regression:
+  new_model50 = lm(ynew50 ~ ., data=new_dframe50)
+  new_vals50 = summary(new_model50)$coefficients
+  new_sig_vals50 = new_vals50[ ,4]
+  
+  #count number of predictors with val < 0.05
+  counter2 = 0
+  for (i in 1:length(new_sig_vals50)){
+    if (new_sig_vals50[i] <= 0.05){
+      counter2 = counter2 + 1
+    }
+  }
+  numStep1 = c(numStep1, counter1)
+  numStep2 = c(numStep2, counter2)
+}
+
+H1 = hist(numStep1, breaks=10);
+H2 = hist(numStep2, breaks=10);
+c1 = rgb(1, 0, 0, 0.5)
+c2 = rgb(0, 0, 1, 0.5)
+plot(H2, col = c2, main=" ")
+plot(H1, col = c1, add = TRUE)
+legend(8, 300, legend=c("After 1st step", "After 2nd step"), lwd=4,
+       col=c(c1, c2))
+
+
+```
+
+## step 2
+```{r}
+rm(list=ls())
+set.seed(123)
+ensp25 = c()
+for (j in 1:1000){
+  nObs = 100
+  nPreds = 25
+  #generate random values from N(0,1)
+  dat = rnorm(nObs * (1 + nPreds))
+  #create a matrix of the values
+  dataset = matrix(data = dat, nrow = nObs, ncol = nPreds + 1)
+  dframe = as.data.frame(dataset)
+  strs = c("y")
+  for (k in 1:nPreds){
+    strs = c(strs, paste("x", toString(k), sep=""))
+  }
+  colnames(dframe) = c(strs)
+  #linear model
+  model = lm(y ~ ., data=dframe)
+  vals = summary(model)$coefficients
+  sig_vals = vals[ ,4]
+  #count number of predictors with val < 0.05
+  counter1 = 0
+  for (i in 1:length(sig_vals)){
+    if (sig_vals[i] <= 0.05){
+      counter1 = counter1 + 1
+    }
+  }
+  #now we check for the significant predictors (those with a val < 0.25)
+  keep = c(1)
+  for (i in 1:length(sig_vals)){
+    if (sig_vals[i] <= 0.25){
+      keep = append(keep, i)
+    }
+  }
+  new_matrix = dataset[ , keep]
+  new_dframe = as.data.frame(new_matrix)
+  new_names = c("ynew")
+  for (k in 1:(length(keep)-1)){
+    new_names = c(new_names, paste("x", toString(k), sep=""))
+  }
+  colnames(new_dframe) = c(new_names)
+  
+  #new regression:
+  new_model = lm(ynew ~ ., data=new_dframe)
+  new_vals = summary(new_model)$coefficients
+  new_sig_vals = new_vals[ ,4]
+  
+  #count number of predictors with val < 0.05
+  counter2 = 0
+  for (i in 1:length(new_sig_vals)){
+    if (new_sig_vals[i] <= 0.05){
+      counter2 = counter2 + 1
+    }
+  }
+  ensp25 = c(ensp25, (counter2 - counter1))
+}
+
+hist(ensp25)
+
+```
+```{r}
+
+rm(list=ls())
+set.seed(123)
+ensp50 = c()
+for (j in 1:1000){
+  nObs = 100
+  nPreds = 50
+  #generate random values from N(0,1)
+  dat = rnorm(nObs * (1 + nPreds))
+  #create a matrix of the values
+  dataset = matrix(data = dat, nrow = nObs, ncol = nPreds + 1)
+  dframe = as.data.frame(dataset)
+  strs = c("y")
+  for (k in 1:nPreds){
+    strs = c(strs, paste("x", toString(k), sep=""))
+  }
+  colnames(dframe) = c(strs)
+  #linear model
+  model = lm(y ~ ., data=dframe)
+  vals = summary(model)$coefficients
+  sig_vals = vals[ ,4]
+  #count number of predictors with val < 0.05
+  counter1 = 0
+  for (i in 1:length(sig_vals)){
+    if (sig_vals[i] <= 0.05){
+      counter1 = counter1 + 1
+    }
+  }
+  #now we check for the significant predictors (those with a val < 0.25)
+  keep = c(1)
+  for (i in 1:length(sig_vals)){
+    if (sig_vals[i] <= 0.25){
+      keep = append(keep, i)
+    }
+  }
+  new_matrix = dataset[ , keep]
+  new_dframe = as.data.frame(new_matrix)
+  new_names = c("ynew")
+  for (k in 1:(length(keep)-1)){
+    new_names = c(new_names, paste("x", toString(k), sep=""))
+  }
+  colnames(new_dframe) = c(new_names)
+  
+  #new regression:
+  new_model = lm(ynew ~ ., data=new_dframe)
+  new_vals = summary(new_model)$coefficients
+  new_sig_vals = new_vals[ ,4]
+  
+  #count number of predictors with val < 0.05
+  counter2 = 0
+  for (i in 1:length(new_sig_vals)){
+    if (new_sig_vals[i] <= 0.05){
+      counter2 = counter2 + 1
+    }
+  }
+  ensp50 = c(ensp50, (counter2 - counter1))
+}
+
+hist(ensp50)
+```
+```{r}
+
+```
+
+## step 3
+```{r}
+## insert code here
+```
+
+**Enter discussion here

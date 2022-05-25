@@ -1,0 +1,185 @@
+---
+title: "lecture 4.7 example 4"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+#clear workspace
+rm(list=ls())
+# load data
+data = read.csv("~/Desktop/wages1.csv")
+
+data=data[,]
+
+# build variables
+wage = data$wage
+school = data$school
+exper = data$exper
+```
+
+## build model objects and functions
+```{r}
+
+#build parameter grid
+stepBeta0Grid = 0.05
+stepBeta1Grid = 0.005
+stepBeta2Grid = 0.005
+stepSigmaGrid = 0.05
+beta0Grid = seq(1.05,1.75, by = stepBeta0Grid)
+beta1Grid = seq(-0.25,0.5, by = stepBeta1Grid)
+beta2Grid = seq(-0.25,0.25, by = stepBeta2Grid)
+sigmaGrid = seq(0.5,0.7, by = stepSigmaGrid)
+
+nBeta0Grid = length(beta0Grid)
+nBeta1Grid = length(beta1Grid)
+nBeta2Grid = length(beta2Grid)
+nSigmaGrid = length(sigmaGrid)
+
+# uninformed priors 
+buildPrior = function() {
+  print('=========')
+  print("building prior")
+  print('=========')
+  prior = array( rep(1, nBeta0Grid * nBeta1Grid * nBeta2Grid * nSigmaGrid ),
+                 dim = c(nBeta0Grid, nBeta1Grid, nBeta2Grid, nSigmaGrid ))
+  for (nB0 in 1:nBeta0Grid) {
+    print(paste("nB0 = ", nB0))
+    for (nB1 in 1:nBeta1Grid) {
+      for (nB2 in 1:nBeta2Grid) {
+        for (nSig in 1:nSigmaGrid) {
+          #prior[nB0,nB1,nB2, nSig] = dnorm(beta0Grid[nB0]) * dnorm(beta1Grid[nB1]) * dnorm(beta2Grid[nB2])
+          prior[nB0,nB1,nB2, nSig] = 1
+        }
+      }
+    }
+  }
+  return(prior)
+}
+
+
+#likelihood
+likelihood = function(y,x1, x2, b0L, b1L, b2L, sL){
+  loglike = sum(log(dnorm(y-b0L-b1L*x1-b2L*x2, mean = 0, sd=sL)))
+  like = exp(loglike)
+  return(like)
+}
+
+#compute posterior function
+compPost = function(y,x1, x2, prior){
+  #initialize local posterior
+  post = array( rep(-1, nBeta0Grid * nBeta1Grid * nBeta2Grid * nSigmaGrid ),
+                dim = c(nBeta0Grid, nBeta1Grid, nBeta2Grid, nSigmaGrid ))
+  # compute posterior
+  for (nBeta0 in 1:nBeta0Grid) {
+    print(paste("beta0 =  ",beta0Grid[nBeta0] ))
+    b0 = beta0Grid[nBeta0]
+    for (nBeta1 in 1:nBeta1Grid) {
+      b1 = beta1Grid[nBeta1]
+      for (nBeta2 in 1:nBeta2Grid) {
+        b2 = beta2Grid[nBeta2]
+        for (nSigma in 1:nSigmaGrid) {
+          s = sigmaGrid[nSigma]
+          post[nBeta0,nBeta1,nBeta2,nSigma] = likelihood(y,x1,x2,b0,b1,b2,s) * prior[nBeta0,nBeta1,nBeta2,nSigma]
+        }
+      }
+    }
+  }
+  # normalize posterior
+  post = post / (sum(post) * stepBeta0Grid * stepBeta1Grid * stepBeta2Grid * stepSigmaGrid) 
+  # return
+  return(post)
+}
+```
+
+## compute posterior
+```{r}
+prior = buildPrior()
+
+#compute posterior function iteratively using batches of 100 observations
+for (k in 1:floor(length(wage)/100)) {
+  print('=========')
+  print(k)
+  print('=========')
+  y = log(wage[(1+(k-1)*100):(k*100)])
+  x1 = school[(1+(k-1)*100):(k*100)] - mean(school)
+  x2 = exper[(1+(k-1)*100):(k*100)] - mean(exper)
+  post = compPost(y,x1,x2,prior)
+  prior = post
+}
+
+#compute marginal posteriors
+margPostBeta0 = apply(post,c(1),sum)
+margPostBeta0 = margPostBeta0 / (sum(margPostBeta0) * stepBeta0Grid)
+
+margPostBeta1 = apply(post,c(2),sum)
+margPostBeta1 = margPostBeta1 / (sum(margPostBeta1) * stepBeta1Grid)
+
+margPostBeta2 = apply(post,c(3),sum)
+margPostBeta2 = margPostBeta2 / (sum(margPostBeta2) * stepBeta2Grid)
+
+margPostSigma = apply(post,c(4),sum)
+margPostSigma = margPostSigma / (sum(margPostSigma) * stepSigmaGrid)
+```
+
+## visualize posteriors
+```{r}
+# compute beta-hat estimates using classical linear regression 
+sC = school - mean(school)
+eC = exper - mean(exper)
+m = lm(log(wage) ~ sC+eC)
+betaHat0 = coef(m)[1]
+betaHat1 = coef(m)[2]
+betaHat2 = coef(m)[3]
+```
+
+```{r}
+#posteriors beta0
+plot(beta0Grid, margPostBeta0,
+     xlab = "beta0", ylab="",
+     type = "l", lwd = 3)
+abline(v=betaHat0, lty=2, lwd=2, col="red")
+segments(betaHat0-stepBeta0Grid, 0,betaHat0+stepBeta0Grid,0, lwd=9, col="red" )
+```
+
+```{r}
+#posteriors beta1
+plot(beta1Grid, margPostBeta1,
+     xlab = "beta1", ylab="",
+     type = "l", lwd = 3)
+abline(v=betaHat1, lty=2,lwd=2, col="red")
+segments(betaHat1-stepBeta1Grid, 0,betaHat1+stepBeta1Grid,0, lwd=9, col="red" )
+```
+
+```{r}
+#posteriors beta2
+plot(beta2Grid, margPostBeta2,
+     xlab = "beta2", ylab="",
+     type = "l", lwd = 3)
+abline(v=betaHat2, lty=2,lwd=2, col="red")
+segments(betaHat2-stepBeta2Grid, 0,betaHat2+stepBeta2Grid,0, lwd=9, col="red" )
+```
+
+```{r}
+#posteriors sigma
+plot(sigmaGrid, margPostSigma,
+     xlab = "sigma", ylab="",
+     type = "l", lwd = 3)
+```
+
+```{r}
+# joint posteriors
+jointPost = apply(post,c(2,3),sum)
+jointPost = jointPost / (sum(jointPost) * stepBeta1Grid* stepBeta2Grid)
+library(lattice)
+new.palette=colorRampPalette(c("white","red","yellow","white"),space="rgb")
+levelplot(jointPost, col.regions=new.palette(20),
+          xlab = "beta_schooling", ylab = "beta_experience",
+          scales=list(x=list(at=c(1,length(beta1Grid)), 
+                             labels=c(-0.25,0.5)),
+                      y=list(at=c(1,length(beta2Grid)), 
+                             labels=c(-0.25,0.5))))
+```
+

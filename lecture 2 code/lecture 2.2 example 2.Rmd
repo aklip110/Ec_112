@@ -1,0 +1,103 @@
+---
+title: "lecture 2.2 example 2"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+# clear environment
+rm(list = ls())
+
+# set random seed
+set.seed(123)
+```
+
+## define params 
+```{r}
+#define grid size
+nGridPoints = 50
+pGrid = seq(from = 0, to = 1,length.out = nGridPoints)
+gridSize = 1 / nGridPoints
+
+# prior params
+aPrior = 1
+bPrior = 1
+
+# define simulations parameters
+nSims = 25000
+
+```
+
+## define simulation functions
+```{r}
+simulateData = function(pHit, sampleSize) {
+  data = rbinom(n = sampleSize, size = 1, prob = pHit)
+  return(data)
+}
+
+computePost = function(data, prior) {
+  nWater = sum(data)
+  nData = length(data)
+  likelihood = dbinom(x = nWater, size = nData, prob = pGrid)
+  post = likelihood * prior
+  post = post / ( sum(post) * gridSize )
+  return(post)
+}
+```
+
+## implement simulations
+```{r}
+# initiallyze lists to store the results
+pTrue     = rep(-1,nSims)
+nSamples  = rep(-1,nSims)
+postMean  = rep(-1,nSims)
+postStd   = rep(-1,nSims)
+
+# prior
+pGrid = seq(from = 0, to = 1,length.out = nGridPoints)
+prior = dbeta(x = pGrid, shape1 = aPrior, shape2 = bPrior)
+
+# implement the simulations
+for (t in 1:nSims) {
+  # randomly choose pTrue
+  pTrue[t] = runif(1, min=0, max=1)
+  # randomly choose number samples
+  nSamples[t] = sample(seq(10,200,20), 1)
+  # simulate data
+  data = simulateData(pTrue[t], nSamples[t])
+  # compute posterior
+  post = computePost(data, prior)
+  # compute posterior summary statistics
+  postMean[t] = sum(pGrid * post * gridSize)
+  postStd[t]  = sqrt(sum(post * gridSize * (pGrid - postMean[t])^2))
+}
+
+```
+
+## plot results
+```{r}
+plot(jitter(nSamples,1), postMean - pTrue, 
+          ylim = c(-0.5, 0.5), 
+          col=rgb(red=0.0, green=0.0, blue=1.0, alpha=0.025), 
+          pch = 16,
+          xlab = "sample size", ylab = "postMean - pTrue")
+abline(h=0)
+```
+
+```{r}
+plot(jitter(nSamples,0.5), postStd, 
+     col=rgb(red=0.0, green=0.0, blue=1.0, alpha=0.025), 
+     pch = 16,
+     xlab = "sample size", ylab = "postStd")
+```
+
+```{r}
+plot(postMean - pTrue, postStd,
+     col=rgb(red=0.0, green=0.0, blue=1.0, alpha=0.025), 
+     pch = 16,
+     xlab = "postMean - pTrue", ylab = "postStd")
+abline(v=0)
+```
+

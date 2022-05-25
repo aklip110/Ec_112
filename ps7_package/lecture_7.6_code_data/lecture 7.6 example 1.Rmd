@@ -1,0 +1,110 @@
+---
+title: "lecture 7.6 example 1"
+output: html_document
+---
+
+NOTE: This code and the associated stan scripts are a slight modification of an example in Lambert's 2018 book, pp. 395-397
+
+## prelims
+```{r}
+rm(list=ls())
+set.seed(123)
+
+setwd("~/Desktop")
+
+library(rstan)
+library(caret)
+options(mc.cores = parallel::detectCores())
+```
+
+## simulation params
+```{r}
+nObs = 10000
+numFolds = 5
+modelTrue = "normal"  # model is either "normal" or "student"
+
+nuTrue = 5
+muTrue = 0
+sigmaTrue = 1
+```
+
+## useful functions
+```{r}
+library(loo)
+
+kFold  = function(aModel, testIndeces, X) {
+  nFolds = length(testIndeces)
+  
+  pointLogLikeTotal = vector()
+  
+  for (i in 1:nFolds) {
+    print(paste("iteration #", i))
+    XTest = X[testIndeces[[i]]]
+    XTrain = X[-testIndeces[[i]]]
+    fit = sampling(aModel, iter = 1000, chains = 4,
+                   data = list(NTest = length(XTest), NTrain = length(XTrain), 
+                               XTrain = XTrain, XTest = XTest), refresh=0)
+    logLike = extract_log_lik(fit, 'logLike')
+    pointLogLikeTemp = colMeans(logLike)
+    pointLogLikeTotal = c(pointLogLikeTotal, pointLogLikeTemp)
+  }
+  
+  return(pointLogLikeTotal)
+}
+
+computeWAIC  = function(aModel, X) {
+  fit = sampling(aModel, iter = 1000, chains = 4, data = list(N = length(X), X = X), refresh=0)
+  logLike = extract_log_lik(fit, 'logLike')
+  WAIC = waic(logLike)
+  return(WAIC)
+}
+
+```
+
+## compile and save stan models
+```{r}
+modelNormalCV = stan_model("example_1_normal_model_cv.stan")
+modelStudentCV = stan_model("example_1_student_t_model_cv.stan")
+modelNormalWAIC = stan_model("example_1_normal_model_waic.stan")
+modelStudentWAIC = stan_model("example_1_student_t_model_waic.stan")
+```
+
+
+## simulate
+```{r}
+## simulate data
+if (modelTrue == "normal") {
+  X = rnorm(nObs, muTrue, sigmaTrue)
+} else if (modelTrue == "student") {
+  X = rt(nObs, nuTrue)
+}
+
+```
+
+## estimate WAIC
+```{r}
+normalWAIC  = computeWAIC(modelNormalWAIC,X)
+print(normalWAIC)
+```
+
+```{r}
+studentWAIC = computeWAIC(modelStudentWAIC,X)
+print(studentWAIC)
+```
+
+
+## estimate Deviance using cross validation
+```{r}
+## create folds using caret package
+testIndeces = createFolds(X, k = numFolds, list = TRUE, returnTrain = FALSE)
+
+## compute ELLPD using cross validation
+ellpdNormal  = sum(kFold(modelNormalCV, testIndeces, X))
+ellpdStudent = sum(kFold(modelStudentCV, testIndeces, X))
+
+# output
+print(paste("Deviance-CV for Normal Model    = ", -2 * round(ellpdNormal,2)))
+print(paste("Devaince-CV for Student t Model = ", -2 * round(ellpdStudent,2)))
+```
+
+

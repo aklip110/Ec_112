@@ -1,0 +1,127 @@
+---
+title: "lecture 4.10 example 1"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## preliminaries
+```{r}
+#clear workspace
+rm(list=ls())
+#set random seed
+set.seed(123)
+
+# import libraries
+library(MASS)
+library(invgamma)
+
+# load data
+data = read.csv("~/Desktop/wages1.csv")
+
+# build variables
+wage = data$wage
+school = data$school
+exper = data$exper
+gender = rep(0, length(wage))
+gender[data$sex=="female"]=1
+```
+
+## fit interaction model using OLS (pooling all data) and use fits to build posteriors
+```{r}
+sC = school - mean(school)
+eC = exper - mean(exper)
+m = lm(log(wage) ~ sC + gender + gender * sC  )
+```
+
+```{r}
+#posterior parameters
+betaHat = coef(m)
+sigmaHat = vcov(m)
+shape = (length(wage) - 3) / 2
+rate = sum(resid(m)^2)/2
+
+```
+
+## posterior predictive checks
+```{r}
+#specify simulation parameters
+deltaSchool = -6:6
+nSimsPer = 10000
+
+predictMale = array(rep(-1, length(deltaSchool) * nSimsPer),
+              dim = c(length(deltaSchool), nSimsPer))
+predictFemale = array(rep(-1, length(deltaSchool) * nSimsPer),
+                dim = c(length(deltaSchool), nSimsPer))
+
+for (t in 1:nSimsPer) {
+  # sample parameters from posteriors
+  beta = mvrnorm(n=1, mu=betaHat, sigmaHat,tol = 1e-10)
+  sigma2 = rinvgamma(1,shape,rate)
+  sigma = sqrt(sigma2)
+  for (n in 1:length(deltaSchool)) {
+    predictMale[n,t] = rnorm(1, beta[1] + beta[2] * deltaSchool[n],sigma)
+    predictFemale[n,t] = rnorm(1, beta[1] + beta[3] + (beta[2]+beta[4]) * deltaSchool[n] ,sigma)
+  }
+}
+```
+
+
+```{r}
+#predictive plot for males
+meanMale = apply(predictMale,c(1),mean)
+
+male10 = rep(0, length(deltaSchool))
+for (t in 1:length(deltaSchool)) {
+  male10[t] = quantile(predictMale[t,],probs=0.1)
+}
+
+male90 = rep(0, length(deltaSchool))
+for (t in 1:length(deltaSchool)) {
+  male90[t] = quantile(predictMale[t,],probs=0.9)
+}
+
+sCMale = sC[gender==0]
+wageMale = wage[gender==0]
+plot(jitter(sCMale,1), log(wageMale), 
+     col=rgb(red=0.0, green=0.0, blue=0.0, alpha=0.1), 
+     pch = 16, xlim = c(-8,8), ylim=c(-2,4),
+     xlab = "years schooling", ylab = "log(wage)",
+     main = "males")
+points(deltaSchool, meanMale, 
+       type="l", lwd = 3)
+points(deltaSchool, male10, 
+       type="l", lwd=2, lty=2)
+points(deltaSchool, male90, 
+       type="l", lwd=2, lty=2)
+```
+
+```{r}
+#predictive plot for females
+meanFemale = apply(predictFemale,c(1),mean)
+
+female10 = rep(0, length(deltaSchool))
+for (t in 1:length(deltaSchool)) {
+  female10[t] = quantile(predictFemale[t,],probs=0.1)
+}
+
+female90 = rep(0, length(deltaSchool))
+for (t in 1:length(deltaSchool)) {
+  female90[t] = quantile(predictFemale[t,],probs=0.9)
+}
+
+sCFemale = sC[gender==1]
+wageFemale = wage[gender==1]
+plot(jitter(sCFemale,1), log(wageFemale), 
+     col=rgb(red=0.0, green=0.0, blue=0.0, alpha=0.1), 
+     pch = 16, xlim = c(-8,8), ylim = c(-2,4),
+     xlab = "years schooling", ylab = "log(wage)",
+     main = "females")
+points(deltaSchool, meanFemale, 
+       type="l", lwd = 3)
+points(deltaSchool, female10, 
+       type="l", lwd=2, lty=2)
+points(deltaSchool, female90, 
+       type="l", lwd=2, lty=2)
+```
+
